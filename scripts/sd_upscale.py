@@ -9,7 +9,6 @@ from modules import processing, shared, images, devices
 from modules.processing import Processed
 from modules.shared import opts, state
 
-logger = logging.getLogger(__name__)
 
 class Script(scripts.Script):
     def title(self):
@@ -56,7 +55,7 @@ class Script(scripts.Script):
         p.do_not_save_grid = True
         p.do_not_save_samples = True
         p.batch_size = tile_batch_size
-        logger.info(f"SD upscale tile batch size: {tile_batch_size}")
+        print(f"SD upscale tile batch size: {tile_batch_size}")
 
         work = []
 
