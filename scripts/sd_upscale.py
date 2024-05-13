@@ -1,4 +1,5 @@
 import math
+import logging
 
 import modules.scripts as scripts
 import gradio as gr
@@ -8,6 +9,7 @@ from modules import processing, shared, images, devices
 from modules.processing import Processed
 from modules.shared import opts, state
 
+logger = logging.getLogger(__name__)
 
 class Script(scripts.Script):
     def title(self):
@@ -21,10 +23,11 @@ class Script(scripts.Script):
         overlap = gr.Slider(minimum=0, maximum=256, step=16, label='Tile overlap', value=64, elem_id=self.elem_id("overlap"))
         scale_factor = gr.Slider(minimum=1.0, maximum=4.0, step=0.05, label='Scale Factor', value=2.0, elem_id=self.elem_id("scale_factor"))
         upscaler_index = gr.Radio(label='Upscaler', choices=[x.name for x in shared.sd_upscalers], value=shared.sd_upscalers[0].name, type="index", elem_id=self.elem_id("upscaler_index"))
+        tile_batch_size = gr.Slider(minimum=1, maximum=8, step=1, label='Tile batch size', value=1, elem_id=self.elem_id("tile_batch_size"))
+        
+        return [info, overlap, upscaler_index, scale_factor, tile_batch_size]
 
-        return [info, overlap, upscaler_index, scale_factor]
-
-    def run(self, p, _, overlap, upscaler_index, scale_factor):
+    def run(self, p, _, overlap, upscaler_index, scale_factor, tile_batch_size):
         if isinstance(upscaler_index, str):
             upscaler_index = [x.name.lower() for x in shared.sd_upscalers].index(upscaler_index.lower())
         processing.fix_seed(p)
@@ -48,11 +51,12 @@ class Script(scripts.Script):
 
         grid = images.split_grid(img, tile_w=p.width, tile_h=p.height, overlap=overlap)
 
-        batch_size = p.batch_size
         upscale_count = p.n_iter
         p.n_iter = 1
         p.do_not_save_grid = True
         p.do_not_save_samples = True
+        p.batch_size = tile_batch_size
+        logger.info(f"SD upscale tile batch size: {tile_batch_size}")
 
         work = []
 
@@ -60,7 +64,7 @@ class Script(scripts.Script):
             for tiledata in row:
                 work.append(tiledata[2])
 
-        batch_count = math.ceil(len(work) / batch_size)
+        batch_count = math.ceil(len(work) / tile_batch_size)
         state.job_count = batch_count * upscale_count
 
         print(f"SD upscaling will process a total of {len(work)} images tiled as {len(grid.tiles[0][2])}x{len(grid.tiles)} per upscale in a total of {state.job_count} batches.")
@@ -72,8 +76,8 @@ class Script(scripts.Script):
 
             work_results = []
             for i in range(batch_count):
-                p.batch_size = batch_size
-                p.init_images = work[i * batch_size:(i + 1) * batch_size]
+                p.batch_size = tile_batch_size
+                p.init_images = work[i * tile_batch_size:(i + 1) * tile_batch_size]
 
                 state.job = f"Batch {i + 1 + n * batch_count} out of {state.job_count}"
                 processed = processing.process_images(p)
